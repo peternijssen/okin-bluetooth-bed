@@ -1,0 +1,96 @@
+substitutions:
+  name: "ble-proxy-bed"
+  friendly_name: ble-proxy-bed
+packages:
+  esphome.bluetooth-proxy: github://esphome/firmware/bluetooth-proxy/m5stack-atom-lite.yaml@main
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false
+  friendly_name: ${friendly_name}
+api:
+  encryption:
+    key: YOUR_KEY
+
+# Enable logging
+logger:
+
+wifi:
+  ssid: YOUR WIFI SSID
+  password: YOUR PASSWORD
+  manual_ip:
+    static_ip: YOUR STATIC IP
+    gateway: YOUR GATEWAY
+    subnet: YOUR SUBNET
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "YOUR AP SSID"
+    password: "YOUR AP PASSWORD"
+
+captive_portal:
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - mac_address:
+        - YOUR MAC ADDRESS
+      then:
+        - lambda: |-
+            ESP_LOGD("ble_adv", "New BLE device");
+            ESP_LOGD("ble_adv", "  address: %s", x.address_str().c_str());
+            ESP_LOGD("ble_adv", "  name: %s", x.get_name().c_str());
+            ESP_LOGD("ble_adv", "  Advertised service UUIDs:");
+            for (auto uuid : x.get_service_uuids()) {
+                ESP_LOGD("ble_adv", "    - %s", uuid.to_string().c_str());
+            }
+            ESP_LOGD("ble_adv", "  Advertised service data:");
+            for (auto data : x.get_service_datas()) {
+                ESP_LOGD("ble_adv", "    - %s: (length %i)", data.uuid.to_string().c_str(), data.data.size());
+            }
+            ESP_LOGD("ble_adv", "  Advertised manufacturer data:");
+            for (auto data : x.get_manufacturer_datas()) {
+                ESP_LOGD("ble_adv", "    - %s: (length %i)", data.uuid.to_string().c_str(), data.data.size());
+            }
+
+binary_sensor:
+  - platform: template
+    name: "Bed 1 connection status"
+    id: bed_1_connection_status
+
+ble_client:
+  - mac_address: YOUR MAC ADDRESS
+    id: bed_1
+    on_connect:
+      then:
+        - lambda: |-
+            ESP_LOGD("ble_client_lambda", "Connected to BLE device");
+        - binary_sensor.template.publish:
+            id: bed_1_connection_status
+            state: True
+    on_disconnect:
+      then:
+        - lambda: |-
+            ESP_LOGD("ble_client_lambda", "Disconnected from BLE device");
+        - binary_sensor.template.publish:
+            id: bed_1_connection_status
+            state: False
+
+switch:
+  - platform: template
+    name: "Bed 1 lights"
+    id: bed_lights_1
+    icon: "mdi:lightbulb-outline"
+    optimistic: true
+    turn_on_action:
+      - ble_client.ble_write:
+          id: bed_1
+          service_uuid: "62741523-52f9-8864-b1ab-3b3a8d65950b"
+          characteristic_uuid: "62741525-52f9-8864-b1ab-3b3a8d65950b"
+          # List of bytes to write.
+          value: [0x04, 0x02, 0x00, 0x02, 0x00, 0x00]
+    turn_off_action:
+      - ble_client.ble_write:
+          id: bed_1
+          service_uuid: "62741523-52f9-8864-b1ab-3b3a8d65950b"
+          characteristic_uuid: "62741525-52f9-8864-b1ab-3b3a8d65950b"
+          # List of bytes to write.
+          value: [0x04, 0x02, 0x00, 0x02, 0x00, 0x00]
