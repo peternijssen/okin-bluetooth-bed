@@ -1,19 +1,22 @@
-substitutions:
-  name: "ble-proxy-bed"
-  friendly_name: ble-proxy-bed
-packages:
-  esphome.bluetooth-proxy: github://esphome/firmware/bluetooth-proxy/m5stack-atom-lite.yaml@main
 esphome:
-  name: ${name}
+  name: "ble-proxy-bed"
   name_add_mac_suffix: false
-  friendly_name: ${friendly_name}
+  friendly_name: ble-proxy-bed
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: esp-idf
+
+logger:
+  
 api:
   encryption:
     key: YOUR_KEY
 
-# Enable logging
-logger:
-
+ota:
+  - platform: esphome
+  
 wifi:
   ssid: YOUR WIFI SSID
   password: YOUR PASSWORD
@@ -51,11 +54,6 @@ esp32_ble_tracker:
                 ESP_LOGD("ble_adv", "    - %s: (length %i)", data.uuid.to_string().c_str(), data.data.size());
             }
 
-binary_sensor:
-  - platform: template
-    name: "Bed 1 connection status"
-    id: bed_1_connection_status
-
 ble_client:
   - mac_address: YOUR MAC ADDRESS
     id: bed_1
@@ -74,23 +72,205 @@ ble_client:
             id: bed_1_connection_status
             state: False
 
-switch:
+binary_sensor:
   - platform: template
-    name: "Bed 1 lights"
-    id: bed_lights_1
+    name: "Bed 1 connection status"
+    id: bed_1_connection_status
+    device_class: connectivity
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: ble_client
+    ble_client_id: bed_1
+    service_uuid: '0000180a-0000-1000-8000-00805f9b34fb'
+    characteristic_uuid: '00002a24-0000-1000-8000-00805f9b34fb'
+    name: "Model Number"
+    id: bed_1_model_number
+    entity_category: diagnostic
+    icon: mdi:identifier
+
+  - platform: ble_client
+    ble_client_id: bed_1
+    service_uuid: '0000180a-0000-1000-8000-00805f9b34fb'
+    characteristic_uuid: '00002a25-0000-1000-8000-00805f9b34fb'
+    name: "Serial Number"
+    id: bed_1_serial_number
+    entity_category: diagnostic
+    icon: mdi:numeric
+
+  - platform: ble_client
+    ble_client_id: bed_1
+    service_uuid: '0000180a-0000-1000-8000-00805f9b34fb'
+    characteristic_uuid: '00002a26-0000-1000-8000-00805f9b34fb'
+    name: "Firmware Revision"
+    id: bed_1_firmware_revision
+    entity_category: diagnostic
+    icon: mdi:chip
+
+  - platform: ble_client
+    ble_client_id: bed_1
+    service_uuid: '0000180a-0000-1000-8000-00805f9b34fb'
+    characteristic_uuid: '00002a27-0000-1000-8000-00805f9b34fb'
+    name: "Hardware Revision"
+    id: bed_1_hardware_revision
+    entity_category: diagnostic
+    icon: mdi:memory
+
+  - platform: ble_client
+    ble_client_id: bed_1
+    service_uuid: '0000180a-0000-1000-8000-00805f9b34fb'
+    characteristic_uuid: '00002a28-0000-1000-8000-00805f9b34fb'
+    name: "Software Revision"
+    id: bed_1_software_revision
+    entity_category: diagnostic
+    icon: mdi:application
+
+  - platform: ble_client
+    ble_client_id: bed_1
+    service_uuid: '0000180a-0000-1000-8000-00805f9b34fb'
+    characteristic_uuid: '00002a29-0000-1000-8000-00805f9b34fb'
+    name: "Manufacturer Name"
+    id: bed_1_manufacturer_name
+    entity_category: diagnostic
+    icon: mdi:factory
+
+button:
+  - platform: template
+    name: "Bed Light"
+    id: bed_light_toggle
     icon: "mdi:lightbulb-outline"
-    optimistic: true
-    turn_on_action:
+    on_press:
       - ble_client.ble_write:
           id: bed_1
-          service_uuid: "62741523-52f9-8864-b1ab-3b3a8d65950b"
-          characteristic_uuid: "62741525-52f9-8864-b1ab-3b3a8d65950b"
-          # List of bytes to write.
-          value: [0x04, 0x02, 0x00, 0x02, 0x00, 0x00]
-    turn_off_action:
-      - ble_client.ble_write:
-          id: bed_1
-          service_uuid: "62741523-52f9-8864-b1ab-3b3a8d65950b"
-          characteristic_uuid: "62741525-52f9-8864-b1ab-3b3a8d65950b"
-          # List of bytes to write.
-          value: [0x04, 0x02, 0x00, 0x02, 0x00, 0x00]
+          service_uuid: 62741523-52f9-8864-b1ab-3b3a8d65950b
+          characteristic_uuid: 62741525-52f9-8864-b1ab-3b3a8d65950b
+          value: [0x04, 0x02, 0x00, 0x02]
+  - platform: template
+    name: "Bed head up"
+    icon: "mdi:arrow-up-bold"
+    on_press:
+      - script.execute:
+          id: control_bed_1
+          section: 1 #head
+          direction: 1 #up
+  - platform: template
+    name: "Bed head down"
+    icon: "mdi:arrow-down-bold"
+    on_press:
+      - script.execute:
+          id: control_bed_1
+          section: 1 #head
+          direction: 0 #down
+  - platform: template
+    name: "Bed feet up"
+    icon: "mdi:arrow-up-bold"
+    on_press:
+      - script.execute:
+          id: control_bed_1
+          section: 2 #feet
+          direction: 1 #down
+
+script:
+  - id: control_bed_1
+    mode: restart 
+    parameters:
+      section: int #1 head, 2 feet
+      direction: int # 1 up, 0 down
+    then:
+      # Check what task to perform
+      - lambda: |-
+          switch (section) {
+            case 1: if (direction == 1) { 
+              id(control_bed_1_head_up).execute();
+              return;
+            } else {
+              id(control_bed_1_head_down).execute();
+              return;
+            };
+            case 2: if (direction == 1){ 
+              id(control_bed_1_feet_up).execute();
+              return;
+            } else {
+              id(control_bed_1_feet_down).execute();
+              return;
+            };
+            default: {      
+              id(control_bed_1_stop_cmd).execute();
+              return;
+            }
+          }
+  - id: control_bed_1_head_up
+    mode: single
+    then:
+      - script.stop: control_bed_1_feet_down
+      - script.stop: control_bed_1_feet_up
+      - script.stop: control_bed_1_head_down
+      #- script.stop: control_bed_1_head_up
+      - repeat:
+          count: 100 #this is not fully up(!)
+          then:
+            - ble_client.ble_write:
+                id: bed_1
+                service_uuid: 62741523-52f9-8864-b1ab-3b3a8d65950b
+                characteristic_uuid: 62741525-52f9-8864-b1ab-3b3a8d65950b
+                value: [0x02, 0x02, 0x00, 0x01]
+            - delay: 140ms
+            - logger.log: "repeat head UP"
+  - id: control_bed_1_head_down
+    mode: single
+    then:
+      - script.stop: control_bed_1_feet_down
+      - script.stop: control_bed_1_feet_up
+      #- script.stop: control_bed_1_head_down
+      - script.stop: control_bed_1_head_up
+      - repeat:
+          count: 100 # 70 is typically enough
+          then:
+            - ble_client.ble_write:
+                id: bed_1
+                service_uuid: 62741523-52f9-8864-b1ab-3b3a8d65950b
+                characteristic_uuid: 62741525-52f9-8864-b1ab-3b3a8d65950b
+                value: [0x02, 0x02, 0x00, 0x02]
+            - delay: 140ms
+            - logger.log: "repeat head DOWN"
+  - id: control_bed_1_feet_up
+    mode: single
+    then:
+      - script.stop: control_bed_1_feet_down
+      #- script.stop: control_bed_1_feet_up
+      - script.stop: control_bed_1_head_down
+      - script.stop: control_bed_1_head_up
+      - repeat:
+          count: 100 # 40 is typically enough
+          then:
+            - ble_client.ble_write:
+                id: bed_1
+                service_uuid: 62741523-52f9-8864-b1ab-3b3a8d65950b
+                characteristic_uuid: 62741525-52f9-8864-b1ab-3b3a8d65950b
+                value: [0x02, 0x02, 0x00, 0x04]
+            - delay: 140ms
+            - logger.log: "repeat feet UP"
+  - id: control_bed_1_feet_down
+    mode: single
+    then:
+      #- script.stop: control_bed_1_feet_down
+      - script.stop: control_bed_1_feet_up
+      - script.stop: control_bed_1_head_down
+      - script.stop: control_bed_1_head_up
+      - repeat:
+          count: 100 # 50 is typically enough
+          then:
+            - ble_client.ble_write:
+                id: bed_1
+                service_uuid: 62741523-52f9-8864-b1ab-3b3a8d65950b
+                characteristic_uuid: 62741525-52f9-8864-b1ab-3b3a8d65950b
+                value: [0x02, 0x02, 0x00, 0x08]
+            - delay: 140ms
+            - logger.log: "repeat feet DOWN"
+  - id: control_bed_1_stop_cmd
+    mode: single
+    then:
+      - script.stop: control_bed_1_feet_down
+      - script.stop: control_bed_1_feet_up
+      - script.stop: control_bed_1_head_down
+      - script.stop: control_bed_1_head_up
